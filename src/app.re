@@ -13,7 +13,17 @@ type state = {
   items: list(item),
 };
 
+type action =
+  | AddItem(string)
+  | ToggleItem(int);
+
 let str = ReasonReact.stringToElement;
+
+let valueFromEvent = evt : string => (
+                                       evt
+                                       |> ReactEventRe.Form.target
+                                       |> ReactDOMRe.domElementToObj
+                                     )##value;
 
 module TodoItem = {
   let component = ReasonReact.statelessComponent("TodoItem");
@@ -32,24 +42,44 @@ module TodoItem = {
   };
 };
 
-type action =
-  | AddItem
-  | ToggleItem(int);
+module Input = {
+  let component = ReasonReact.reducerComponent("Input");
+  let make = (~onSubmit, _children) => {
+    ...component,
+    initialState: () => "",
+    reducer: (newText, _currentState) => ReasonReact.Update(newText),
+    render: self =>
+      <input
+        value=self.state
+        _type="text"
+        placeholder="Write something to do"
+        /* onChange: Update value on each keystroke */
+        onChange=(evt => self.send(valueFromEvent(evt)))
+        onKeyDown=(
+          evt =>
+            if (ReactEventRe.Keyboard.key(evt) == "Enter") {
+              onSubmit(self.state);
+              self.send("");
+            }
+        )
+      />,
+  };
+};
 
 /* Component template declaration must be **after** state and action declarations! */
 let component = ReasonReact.reducerComponent("TodoApp");
 
 let lastId = ref(0);
 
-let newItem = () => {
+let newItem = (text) => {
   lastId := lastId^ + 1;
-  {title: "Click a button", completed: true, id: lastId^};
+  {title: text, completed: false, id: lastId^};
 };
 
 let toggleItem = (items, id) =>
   List.map(
     item => item.id === id ? {...item, completed: ! item.completed} : item,
-    items
+    items,
   );
 
 /* underscores before names indicate unused variables. We name them for clarity */
@@ -60,13 +90,13 @@ let make = _children => {
   },
   reducer: (action, {items}) =>
     switch (action) {
-    | AddItem => ReasonReact.Update({items: [newItem(), ...items]})
+    | AddItem(text) => ReasonReact.Update({items: [newItem(text), ...items]})
     | ToggleItem(id) =>
       let items =
         List.map(
           item =>
             item.id === id ? {...item, completed: ! item.completed} : item,
-          items
+          items,
         );
       ReasonReact.Update({items: items});
     },
@@ -82,17 +112,17 @@ let make = _children => {
     <div className="app">
       <div className="title">
         (str("What to do"))
-        <button onClick=(_evt => self.send(AddItem))>
-          (str("Add something"))
-        </button>
+         <Input onSubmit=(text => self.send(AddItem(text))) />
       </div>
       <div className="items">
         (
           List.map(
-            item => <TodoItem
-              item
-              key=(string_of_int(item.id))
-              onToggle=(_evt => self.send(ToggleItem(item.id))) />,
+            item =>
+              <TodoItem
+                item
+                key=(string_of_int(item.id))
+                onToggle=(_evt => self.send(ToggleItem(item.id)))
+              />,
             items,
           )
           |> Array.of_list
